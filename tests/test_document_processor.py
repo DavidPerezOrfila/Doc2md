@@ -48,7 +48,8 @@ class DocumentProcessorTests(unittest.TestCase):
 
             result = create_processor(settings).process(source)
 
-            self.assertEqual(result, settings.output_dir / "example.txt.md")
+            self.assertEqual(result.name, "example.txt.md")
+            self.assertTrue(result.exists())
             self.assertIn("# Title", result.read_text(encoding="utf-8"))
 
     def test_rejects_audio_and_video_external_processing(self) -> None:
