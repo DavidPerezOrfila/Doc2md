@@ -6,7 +6,7 @@ import unittest
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from doc2md.archive_validation import validate_archive
-from doc2md.config import AppSettings
+from doc2md.config import AppSettings, executable_path
 from doc2md.conversion import DocumentConverter
 from doc2md.document_processor import DocumentProcessor
 from doc2md.markdown_repair import MarkdownLinter, MarkdownLintError
@@ -19,7 +19,7 @@ def create_settings(root: Path) -> AppSettings:
         input_dir=root / "input",
         output_dir=root / "converted",
         pymarkdown_config=ROOT / ".pymarkdown.json",
-        pymarkdown_executable=Path(sys.executable).with_name(
+        pymarkdown_executable=executable_path(
             "pymarkdown.exe" if sys.platform == "win32" else "pymarkdown"
         ),
     )

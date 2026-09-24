@@ -4,8 +4,16 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+def executable_path(name: str) -> Path:
+    directory = Path(sys.executable).parent
+    expected_directory = "Scripts" if sys.platform == "win32" else "bin"
+    if directory.name.lower() != expected_directory.lower():
+        directory = directory / expected_directory
+    return directory / name
+
+
 BUNDLED_PYMARKDOWN_CONFIG = Path(__file__).with_name("pymarkdown.json")
-PYMARKDOWN_EXECUTABLE = Path(sys.executable).with_name(
+PYMARKDOWN_EXECUTABLE = executable_path(
     "pymarkdown.exe" if sys.platform == "win32" else "pymarkdown"
 )
 
