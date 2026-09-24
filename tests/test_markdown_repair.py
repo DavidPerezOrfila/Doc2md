@@ -1,12 +1,15 @@
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
 from doc2md.markdown_repair import MarkdownLinter
 
 ROOT = Path(__file__).resolve().parents[1]
-PYMARKDOWN = ROOT / ".venv" / "Scripts" / "pymarkdown.exe"
+PYMARKDOWN = Path(sys.executable).with_name(
+    "pymarkdown.exe" if sys.platform == "win32" else "pymarkdown"
+)
 CONFIG = ROOT / ".pymarkdown.json"
 
 

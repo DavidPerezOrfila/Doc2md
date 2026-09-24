@@ -1,5 +1,6 @@
 from io import BytesIO
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -18,7 +19,9 @@ def create_settings(root: Path) -> AppSettings:
         input_dir=root / "input",
         output_dir=root / "converted",
         pymarkdown_config=ROOT / ".pymarkdown.json",
-        pymarkdown_executable=ROOT / ".venv" / "Scripts" / "pymarkdown.exe",
+        pymarkdown_executable=Path(sys.executable).with_name(
+            "pymarkdown.exe" if sys.platform == "win32" else "pymarkdown"
+        ),
     )
 
 
