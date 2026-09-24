@@ -31,37 +31,48 @@ jobs:
           --name Doc2md --paths src
           --add-data "${{ github.workspace }}/src/doc2md/pymarkdown.json;doc2md"
           --collect-all markitdown --collect-all magika --collect-all watchdog
+          --collect-all pymarkdown --collect-all application_properties
+          --collect-all application_file_scanner
           --distpath dist --workpath build/doc2md --specpath build
           src/doc2md/__main__.py
-      - name: Build PyMarkdown helper
-        run: >-
-          python -m PyInstaller --noconfirm --clean --onefile
-          --name pymarkdown
-          --collect-all pymarkdown
-          --collect-all application_properties
-          --collect-all application_file_scanner
-          --distpath dist --workpath build/pymarkdown --specpath build
-          packaging/pymarkdown_launcher.py
       - name: Smoke-test packaged application
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force smoke/input,smoke/converted | Out-Null
-          Copy-Item dist/Doc2md.exe,dist/pymarkdown.exe smoke/
+          Copy-Item dist/Doc2md.exe smoke/
           Set-Content smoke/input/sample.txt "# Release smoke test`n`nClean output."
-          $process = Start-Process smoke/Doc2md.exe -WorkingDirectory smoke -PassThru -WindowStyle Hidden
+          $stdout = "smoke/stdout.log"
+          $stderr = "smoke/stderr.log"
+          Start-Process smoke/Doc2md.exe -WorkingDirectory smoke `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
+            -WindowStyle Hidden
           $output = "smoke/converted/sample.txt.md"
           $deadline = (Get-Date).AddSeconds(90)
           while ((Get-Date) -lt $deadline -and -not (Test-Path $output)) {
             Start-Sleep -Milliseconds 500
           }
-          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-          if (-not (Test-Path $output)) { throw "Packaged application produced no output." }
-          & smoke/pymarkdown.exe --strict-config scan $output
+          & taskkill /IM Doc2md.exe /T /F 2>$null | Out-Null
+          $processDeadline = (Get-Date).AddSeconds(10)
+          while ((Get-Date) -lt $processDeadline -and (Get-Process -Name Doc2md -ErrorAction SilentlyContinue)) {
+            Start-Sleep -Milliseconds 200
+          }
+          if (Get-Process -Name Doc2md -ErrorAction SilentlyContinue) {
+            throw "Packaged application process tree is still running."
+          }
+          if (-not (Test-Path $output)) {
+            Get-Content $stdout, $stderr -ErrorAction SilentlyContinue
+            throw "Packaged application produced no output."
+          }
+          $content = Get-Content $output -Raw
+          if ($content -notmatch "# Release smoke test") {
+            throw "Packaged output has unexpected content."
+          }
+          python -m pymarkdown --config src/doc2md/pymarkdown.json --strict-config scan $output
           if ($LASTEXITCODE -ne 0) { throw "Packaged output failed strict lint." }
       - name: Package and checksum
         shell: pwsh
         run: |
-          Compress-Archive -Path dist/Doc2md.exe,dist/pymarkdown.exe -DestinationPath Doc2md-Windows-x64.zip
+          Compress-Archive -Path dist/Doc2md.exe -DestinationPath Doc2md-Windows-x64.zip
           $hash = (Get-FileHash Doc2md-Windows-x64.zip -Algorithm SHA256).Hash.ToLower()
           "$hash  Doc2md-Windows-x64.zip" | Set-Content Doc2md-Windows-x64.zip.sha256
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
