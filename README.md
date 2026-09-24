@@ -7,7 +7,7 @@
 **Doc2md watches your folder, converts complex documents, repairs the output, and publishes only zero-warning Markdown.**
 
 [![CI](https://github.com/DavidPerezOrfila/Doc2md/actions/workflows/ci.yml/badge.svg)](https://github.com/DavidPerezOrfila/Doc2md/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/DavidPerezOrfila/Doc2md?label=Release&color=blue)](https://github.com/DavidPerezOrfila/Doc2md/releases/latest)
+[![Release 0.1.0](https://img.shields.io/badge/Release-0.1.0-blue)](https://github.com/DavidPerezOrfila/Doc2md/releases/tag/v0.1.0)
 [![License](https://img.shields.io/github/license/DavidPerezOrfila/Doc2md?color=blue)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12--3.14-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
