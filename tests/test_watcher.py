@@ -5,10 +5,8 @@ import unittest
 
 from watchdog.events import FileCreatedEvent
 
-from doc2md.config import AppSettings
+from doc2md.config import AppSettings, BUNDLED_PYMARKDOWN_CONFIG
 from doc2md.watcher import DocumentEventHandler, PendingJobs, watch_documents
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 class WatcherTests(unittest.TestCase):
@@ -29,7 +27,7 @@ class WatcherTests(unittest.TestCase):
             settings = AppSettings(
                 input_dir=root / "input",
                 output_dir=root / "converted",
-                pymarkdown_config=ROOT / ".pymarkdown.json",
+                pymarkdown_config=BUNDLED_PYMARKDOWN_CONFIG,
                 idle_timeout_seconds=0.05,
             )
             started = time.monotonic()
@@ -44,7 +42,7 @@ class WatcherTests(unittest.TestCase):
             settings = AppSettings(
                 input_dir=root,
                 output_dir=root,
-                pymarkdown_config=ROOT / ".pymarkdown.json",
+                pymarkdown_config=BUNDLED_PYMARKDOWN_CONFIG,
             )
 
             with self.assertRaisesRegex(ValueError, "distinto"):

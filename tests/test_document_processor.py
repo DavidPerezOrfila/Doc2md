@@ -1,27 +1,29 @@
 from io import BytesIO
 from pathlib import Path
-import sys
 import tempfile
 import unittest
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from markitdown.converters import (
+    AudioConverter,
+    BingSerpConverter,
+    WikipediaConverter,
+    YouTubeConverter,
+)
+
 from doc2md.archive_validation import validate_archive
-from doc2md.config import AppSettings, executable_path
-from doc2md.conversion import DocumentConverter
+from doc2md.config import AppSettings, BUNDLED_PYMARKDOWN_CONFIG
+from doc2md.conversion import DocumentConverter, _create_markitdown
 from doc2md.document_processor import DocumentProcessor
 from doc2md.markdown_repair import MarkdownLinter, MarkdownLintError
-
-ROOT = Path(__file__).resolve().parents[1]
+from doc2md.pymarkdown_runner import PyMarkdownRunner
 
 
 def create_settings(root: Path) -> AppSettings:
     return AppSettings(
         input_dir=root / "input",
         output_dir=root / "converted",
-        pymarkdown_config=ROOT / ".pymarkdown.json",
-        pymarkdown_executable=executable_path(
-            "pymarkdown.exe" if sys.platform == "win32" else "pymarkdown"
-        ),
+        pymarkdown_config=BUNDLED_PYMARKDOWN_CONFIG,
     )
 
 
@@ -30,8 +32,7 @@ def create_processor(settings: AppSettings) -> DocumentProcessor:
         settings,
         DocumentConverter(),
         MarkdownLinter(
-            settings.pymarkdown_config,
-            settings.pymarkdown_executable,
+            PyMarkdownRunner(settings.pymarkdown_config),
             max_attempts=2,
         ),
     )
@@ -51,6 +52,18 @@ class DocumentProcessorTests(unittest.TestCase):
             self.assertEqual(result.name, "example.txt.md")
             self.assertTrue(result.exists())
             self.assertIn("# Title", result.read_text(encoding="utf-8"))
+
+    def test_processes_utf16_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            settings = create_settings(root)
+            source = settings.input_dir / "notes.txt"
+            source.parent.mkdir()
+            source.write_bytes("# Notas\nhola".encode("utf-16"))
+
+            result = create_processor(settings).process(source)
+
+            self.assertIn("# Notas", result.read_text(encoding="utf-8"))
 
     def test_rejects_audio_and_video_external_processing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -72,6 +85,78 @@ class DocumentProcessorTests(unittest.TestCase):
             source.write_bytes(b"RIFF\x00\x00\x00\x00WAVEfmt ")
 
             with self.assertRaisesRegex(ValueError, "audio/video"):
+                create_processor(settings).process(source)
+
+    def test_rejects_mp3_frame_sync_content(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            settings = create_settings(root)
+            source = settings.input_dir / "recording.bin"
+            settings.input_dir.mkdir()
+            source.write_bytes(b"\xff\xfa\x00\x00")
+
+            with self.assertRaisesRegex(ValueError, "audio/video"):
+                create_processor(settings).process(source)
+
+    def test_rejects_zip_content_with_non_zip_suffix(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            settings = create_settings(root)
+            settings.input_dir.mkdir()
+            source = settings.input_dir / "payload.bmp"
+            with ZipFile(source, "w") as archive:
+                archive.writestr("inner.txt", b"document content")
+
+            with self.assertRaisesRegex(ValueError, "comprimido"):
+                create_processor(settings).process(source)
+
+    def test_rejects_prefixed_zip_content(self) -> None:
+        archive_bytes = BytesIO()
+        with ZipFile(archive_bytes, "w") as archive:
+            archive.writestr("inner.txt", b"document content")
+        prefixed = b"{\\rtf1 ANSI\n" + archive_bytes.getvalue()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            settings = create_settings(root)
+            settings.input_dir.mkdir()
+            source = settings.input_dir / "payload.rtf"
+            source.write_bytes(prefixed)
+
+            with self.assertRaisesRegex(ValueError, "comprimido"):
+                create_processor(settings).process(source)
+
+    def test_registers_only_local_converters(self) -> None:
+        converters = [registration.converter for registration in _create_markitdown()._converters]
+
+        self.assertFalse(
+            any(
+                isinstance(
+                    converter,
+                    (
+                        AudioConverter,
+                        BingSerpConverter,
+                        WikipediaConverter,
+                        YouTubeConverter,
+                    ),
+                )
+                for converter in converters
+            )
+        )
+
+    def test_rejects_nested_archive_member_by_content(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            settings = create_settings(root)
+            settings.input_dir.mkdir()
+            inner = BytesIO()
+            with ZipFile(inner, "w") as archive:
+                archive.writestr("inner.txt", b"document content")
+            source = settings.input_dir / "archive.zip"
+            with ZipFile(source, "w") as archive:
+                archive.writestr("payload.bmp", inner.getvalue())
+
+            with self.assertRaisesRegex(ValueError, "anidados"):
                 create_processor(settings).process(source)
 
     def test_rejects_source_outside_input_directory(self) -> None:

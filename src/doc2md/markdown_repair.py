@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import re
-import subprocess
-import tempfile
 import textwrap
-from pathlib import Path
 
+from doc2md.pymarkdown_runner import MarkdownRunner
 from doc2md.table_repair import repair_tables
 
 ATX_HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*)|[ \t]*)$")
@@ -15,7 +13,7 @@ BARE_URL = re.compile(r"(?<![<(\[])(?:https?://|www\.)[^\s<>]+")
 HARD_BREAK = re.compile(r"(?: {2,}|\\)$")
 REFERENCE_DEFINITION = re.compile(r"^ {0,3}\[[^\]]+\]:\s+\S+")
 INDENTED_CODE = re.compile(r"^(?: {4}|\t)")
-MAX_DIAGNOSTIC_CHARACTERS = 64 * 1024
+MAX_QUARANTINE_MARKDOWN_CHARACTERS = 1024 * 1024
 
 FenceState = tuple[str, int] | None
 
@@ -30,87 +28,49 @@ class MarkdownLintError(RuntimeError):
 class MarkdownLinter:
     def __init__(
         self,
-        config_path: Path,
-        executable: Path,
+        runner: MarkdownRunner,
         max_attempts: int = 5,
-        timeout_seconds: int = 60,
         line_length: int = 120,
     ) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts debe ser mayor que cero")
         if line_length < 1:
             raise ValueError("line_length debe ser mayor que cero")
-        self.config_path = config_path.resolve(strict=True)
-        self.executable = executable.resolve(strict=True)
+        self.runner = runner
         self.max_attempts = max_attempts
-        self.timeout_seconds = timeout_seconds
         self.line_length = line_length
 
     def lint_and_fix(self, markdown: str, document_title: str = "Document") -> str:
         if not markdown.strip():
             return ""
         current = _prepare_markdown(markdown, document_title, self.line_length)
-        with tempfile.TemporaryDirectory() as temp_dir:
-            document = Path(temp_dir) / "document.md"
-            document.write_text(current, encoding="utf-8")
-
-            for attempt in range(1, self.max_attempts + 1):
-                fix_result = self._run("fix", document, check=False)
-                if fix_result.returncode != 0 and "Fixed:" not in fix_result.stdout:
-                    diagnostics = _diagnostics(fix_result)
-                    raise MarkdownLintError(f"pymarkdown fix falló:\n{diagnostics}", current)
-                current = _prepare_markdown(
-                    document.read_text(encoding="utf-8"),
-                    document_title,
-                    self.line_length,
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                fixed = self.runner.fix(current)
+            except RuntimeError as error:
+                raise MarkdownLintError(
+                    str(error),
+                    _bounded_markdown(current),
+                ) from error
+            current = _prepare_markdown(fixed, document_title, self.line_length)
+            try:
+                result = self.runner.scan(current)
+            except RuntimeError as error:
+                raise MarkdownLintError(
+                    str(error),
+                    _bounded_markdown(current),
+                ) from error
+            if result.is_clean:
+                return current
+            if attempt == self.max_attempts:
+                raise MarkdownLintError(
+                    result.diagnostics,
+                    _bounded_markdown(current),
                 )
-                document.write_text(current, encoding="utf-8")
-                result = self._run("scan", document, check=False)
-                if result.returncode == 0:
-                    return current
-                if attempt == self.max_attempts:
-                    raise MarkdownLintError(_diagnostics(result), current)
-
-        raise MarkdownLintError("No se pudo analizar el Markdown", current)
-
-    def _run(
-        self,
-        action: str,
-        document: Path,
-        check: bool = True,
-    ) -> subprocess.CompletedProcess[str]:
-        command = [
-            str(self.executable),
-            "--config",
-            str(self.config_path),
-            "--strict-config",
-            action,
-            str(document),
-        ]
-        try:
-            with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
-                process = subprocess.Popen(
-                    command,
-                    stdout=stdout_file,
-                    stderr=stderr_file,
-                )
-                try:
-                    process.communicate(timeout=self.timeout_seconds)
-                except subprocess.TimeoutExpired as error:
-                    process.kill()
-                    process.communicate()
-                    raise RuntimeError(
-                        f"pymarkdown excedió {self.timeout_seconds} segundos"
-                    ) from error
-                stdout = _read_bounded(stdout_file)
-                stderr = _read_bounded(stderr_file)
-        except OSError as error:
-            raise RuntimeError(f"No se pudo ejecutar pymarkdown {action}: {error}") from error
-
-        result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
-        if check and result.returncode != 0:
-            raise RuntimeError(f"pymarkdown {action} falló:\n{_diagnostics(result)}")
-        return result
+        raise MarkdownLintError(
+            "No se pudo analizar el Markdown",
+            _bounded_markdown(current),
+        )
 
 
 def _prepare_markdown(markdown: str, document_title: str, line_length: int) -> str:
@@ -557,18 +517,9 @@ def _update_fence(line: str, active: FenceState) -> tuple[bool, FenceState]:
     return False, active
 
 
+def _bounded_markdown(markdown: str) -> str:
+    return markdown[:MAX_QUARANTINE_MARKDOWN_CHARACTERS]
+
+
 def _trim_plain_line(line: str) -> str:
     return line if HARD_BREAK.search(line) or INDENTED_CODE.match(line) else line.rstrip()
-
-
-def _read_bounded(stream: tempfile._TemporaryFileWrapper) -> str:
-    stream.seek(0)
-    data = stream.read(MAX_DIAGNOSTIC_CHARACTERS + 1)
-    text = data.decode("utf-8", errors="replace")
-    if len(data) > MAX_DIAGNOSTIC_CHARACTERS:
-        return text[:MAX_DIAGNOSTIC_CHARACTERS] + "\nDiagnóstico truncado"
-    return text
-
-
-def _diagnostics(result: subprocess.CompletedProcess[str]) -> str:
-    return result.stdout.strip() or result.stderr.strip()

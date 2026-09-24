@@ -1,59 +1,27 @@
-from pathlib import Path
-import subprocess
-import sys
-import tempfile
 import unittest
 
-from doc2md.config import executable_path
+from doc2md.config import BUNDLED_PYMARKDOWN_CONFIG
 from doc2md.markdown_repair import MarkdownLinter
-
-ROOT = Path(__file__).resolve().parents[1]
-PYMARKDOWN = executable_path("pymarkdown.exe" if sys.platform == "win32" else "pymarkdown")
-CONFIG = ROOT / ".pymarkdown.json"
+from doc2md.pymarkdown_runner import PyMarkdownRunner
 
 
 class MarkdownLinterTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.linter = MarkdownLinter(CONFIG, PYMARKDOWN, max_attempts=5)
+        self.runner = PyMarkdownRunner(BUNDLED_PYMARKDOWN_CONFIG)
+        self.linter = MarkdownLinter(self.runner, max_attempts=5)
 
     def test_repairs_markdown_until_scan_has_no_warnings(self) -> None:
         repaired = self.linter.lint_and_fix("#  Title\ntext   ")
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = Path(temp_dir) / "document.md"
-            path.write_text(repaired, encoding="utf-8")
-            result = subprocess.run(
-                [
-                    str(PYMARKDOWN),
-                    "--config",
-                    str(CONFIG),
-                    "--strict-config",
-                    "scan",
-                    str(path),
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+        result = self.runner.scan(repaired)
 
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(result.is_clean, result.diagnostics)
         self.assertIn("# Title", repaired)
 
     def test_adds_heading_to_plain_text_output(self) -> None:
         repaired = self.linter.lint_and_fix("Integration Document", "integration")
 
         self.assertTrue(repaired.startswith("# integration\n"))
-
-    def test_configuration_applies_120_character_limit(self) -> None:
-        result = subprocess.run(
-            [str(PYMARKDOWN), "--config", str(CONFIG), "--strict-config", "plugins", "info", "md013"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("line_length             integer  120", result.stdout)
 
     def test_uses_configured_120_character_line_limit(self) -> None:
         line = "word " * 24
@@ -75,17 +43,9 @@ Section
 
         repaired = self.linter.lint_and_fix(markdown, "document")
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = Path(temp_dir) / "document.md"
-            path.write_text(repaired, encoding="utf-8")
-            result = subprocess.run(
-                [str(PYMARKDOWN), "--config", str(CONFIG), "--strict-config", "scan", str(path)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+        result = self.runner.scan(repaired)
 
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(result.is_clean, result.diagnostics)
         self.assertIn("## Second", repaired)
         self.assertIn("# Section", repaired)
         self.assertIn("<https://example.com>", repaired)

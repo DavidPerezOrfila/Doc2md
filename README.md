@@ -70,8 +70,8 @@ input/
 1. Open the [latest release](https://github.com/DavidPerezOrfila/Doc2md/releases/latest).
 2. Download `Doc2md-Windows-x64.zip`.
 3. Extract it anywhere on your Windows computer.
-4. Keep `Doc2md.exe` and `pymarkdown.exe` in the same folder.
-5. Create `input/` and `converted/` beside the executables.
+4. Keep `Doc2md.exe` in its own folder.
+5. Create `input/` and `converted/` beside the executable.
 6. Run `Doc2md.exe`.
 
 ## 🛠️ Run from source
@@ -90,7 +90,7 @@ Copy documents into `input/`. Clean output appears in `converted/` as
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\pymarkdown.exe --config .pymarkdown.json --strict-config scan converted\*.md
+.\.venv\Scripts\pymarkdown.exe --config src\doc2md\pymarkdown.json --strict-config scan converted\*.md
 ```
 
 ## 📄 License

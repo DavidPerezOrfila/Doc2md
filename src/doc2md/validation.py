@@ -51,9 +51,26 @@ def has_media_signature(stream: BinaryIO) -> bool:
     header = stream.read(16)
     stream.seek(position)
     return (
-        header.startswith((b"RIFF", b"OggS", b"fLaC", b"ID3"))
-        or header.startswith(b"\xff\xfb")
+        header.startswith(
+            (
+                b"OggS",
+                b"fLaC",
+                b"ID3",
+                b"\x1a\x45\xdf\xa3",
+                b"\x00\x00\x01\xba",
+                b"\x00\x00\x01\xb3",
+                b"\x30\x26\xb2\x75",
+            )
+        )
+        or (header.startswith(b"RIFF") and header[8:12] in {b"WAVE", b"AVI "})
+        or (
+            not header.startswith(b"\xff\xfe")
+            and len(header) >= 2
+            and header[0] == 0xFF
+            and (header[1] & 0xE0) == 0xE0
+        )
         or header[4:8] == b"ftyp"
+        or (header.startswith(b"FORM") and header[8:12] in {b"AIFF", b"AIFC"})
     )
 
 
